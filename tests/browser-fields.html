@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>AutoKeyboard local typing checks</title>
+<style>body{font:18px system-ui;max-width:850px;margin:32px auto}label{display:block;margin:20px 0}input,textarea,[contenteditable]{display:block;font:22px system-ui;padding:12px;min-width:75%;border:1px solid #888}button{padding:12px}</style>
+<h1>Local typing checks</h1>
+<p>Select AutoKeyboard. Physically type hgsghl, Space, hello, Space. Expected: <b dir="auto">السلام hello </b>. There is no network code or text storage.</p>
+<label>Plain input<input autocomplete="off" spellcheck="false"></label>
+<label>Textarea<textarea spellcheck="false"></textarea></label>
+<label>Editable document<div contenteditable="true" spellcheck="false"></div></label>
+<p>These protected fields should keep ordinary input unchanged. Use dummy values.</p>
+<label>Password<input type="password" autocomplete="off"></label>
+<label>Email<input type="email" autocomplete="off"></label>
+<label>URL<input type="url" autocomplete="off"></label>
+<label>Read only<input readonly value="This text must remain unchanged"></label>
+<label>Disabled<input disabled value="This text must remain unchanged"></label>
+<form><label>Enter submits once<input id="submit-field" autocomplete="off"></label><button>Submit</button><output id="count">0 submissions</output></form>
+<script>let count=0;document.querySelector('form').addEventListener('submit',event=>{event.preventDefault();document.querySelector('#count').textContent=`${++count} submissions`});</script>
+</html>
