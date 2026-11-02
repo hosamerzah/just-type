@@ -151,22 +151,89 @@ bool verify_files(const Path& root,const std::vector<Entry>& entries) {
 }
 bool remove_files(const Path& root,const std::vector<Entry>& entries) {
     bool pending=false;
+    bool isRollback = root.filename().wstring().starts_with(L".rollback-");
+    Path uninstallRollback = root / (L".rollback-uninstall-" + std::to_wstring(GetCurrentProcessId()));
+    auto retire_or_delay = [&](const Path& rel, const Path& full) {
+        if (!isRollback) {
+            Path retired = uninstallRollback / rel;
+            std::error_code ec;
+            std::filesystem::create_directories(retired.parent_path(), ec);
+            if (MoveFileExW(full.c_str(), retired.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+                MoveFileExW(retired.c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT);
+                MoveFileExW(uninstallRollback.c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT);
+                pending = true;
+                return;
+            }
+        }
+        if (!MoveFileExW(full.c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT)) throw std::runtime_error("Close apps using AutoKeyboard, then uninstall again");
+        pending = true;
+    };
     std::set<Path,std::greater<Path>> directories;
     for(const auto& entry:entries) {
         validate_target(root,entry.path);
         auto path=root/entry.path;
         if(std::filesystem::exists(path) && !DeleteFileW(path.c_str())) {
-            if(!MoveFileExW(path.c_str(),nullptr,MOVEFILE_DELAY_UNTIL_REBOOT))throw std::runtime_error("Close apps using AutoKeyboard, then uninstall again");
+            retire_or_delay(entry.path, path);
             pending=true;
         }
         auto parent=entry.path.parent_path();while(!parent.empty()){directories.insert(parent);parent=parent.parent_path();}
     }
     auto self=root/L"AutoKeyboardSetup.exe";
-    if(std::filesystem::exists(self) && !DeleteFileW(self.c_str())){MoveFileExW(self.c_str(),nullptr,MOVEFILE_DELAY_UNTIL_REBOOT);pending=true;}
-    for(const auto& directory:directories){std::error_code error;std::filesystem::remove(root/directory,error);if(error && pending)MoveFileExW((root/directory).c_str(),nullptr,MOVEFILE_DELAY_UNTIL_REBOOT);}
+    if(std::filesystem::exists(self) && !DeleteFileW(self.c_str())){retire_or_delay(L"AutoKeyboardSetup.exe", self);}
+    for(const auto& directory:directories){std::error_code error;std::filesystem::remove(root/directory,error);if(error && pending && isRollback)MoveFileExW((root/directory).c_str(),nullptr,MOVEFILE_DELAY_UNTIL_REBOOT);}
     std::error_code error;std::filesystem::remove(root,error);
-    if(error && pending)MoveFileExW(root.c_str(),nullptr,MOVEFILE_DELAY_UNTIL_REBOOT);
+    if(error && pending && isRollback)MoveFileExW(root.c_str(),nullptr,MOVEFILE_DELAY_UNTIL_REBOOT);
     return pending;
+}
+void clear_live_pending_operations(const Path& root) {
+    constexpr wchar_t SessionKey[] = L"SYSTEM\\CurrentControlSet\\Control\\Session Manager";
+    constexpr wchar_t ValueName[] = L"PendingFileRenameOperations";
+    auto operations = registry_value(SessionKey, ValueName, RRF_RT_REG_MULTI_SZ);
+    if (!ak::setup::pending_change(root, operations)) return;
+    std::wstring filtered;
+    for (size_t offset = 0; offset < operations.size();) {
+        if (operations[offset] == L'\0') { ++offset; continue; }
+        auto end1 = operations.find(L'\0', offset);
+        if (end1 == std::wstring::npos) end1 = operations.size();
+        std::wstring src = operations.substr(offset, end1 - offset);
+        offset = (end1 < operations.size()) ? end1 + 1 : operations.size();
+        std::wstring dst;
+        if (offset < operations.size()) {
+            auto end2 = operations.find(L'\0', offset);
+            if (end2 == std::wstring::npos) end2 = operations.size();
+            dst = operations.substr(offset, end2 - offset);
+            offset = (end2 < operations.size()) ? end2 + 1 : operations.size();
+        }
+        std::wstring pair_block = src;
+        pair_block.push_back(L'\0');
+        pair_block += dst;
+        pair_block.push_back(L'\0');
+        pair_block.push_back(L'\0');
+        if (ak::setup::pending_change(root, pair_block)) continue;
+        filtered += src;
+        filtered.push_back(L'\0');
+        filtered += dst;
+        filtered.push_back(L'\0');
+    }
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, SessionKey, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
+        if (filtered.empty()) {
+            RegDeleteValueW(key, ValueName);
+        } else {
+            filtered.push_back(L'\0');
+            RegSetValueExW(key, ValueName, 0, REG_MULTI_SZ, reinterpret_cast<const BYTE*>(filtered.data()),
+                static_cast<DWORD>(filtered.size() * sizeof(wchar_t)));
+        }
+        RegCloseKey(key);
+    }
+}
+bool has_only_rollback_entries(const Path& root) {
+    std::error_code ec;
+    if (!std::filesystem::exists(root, ec) || !std::filesystem::is_directory(root, ec)) return false;
+    for (const auto& item : std::filesystem::directory_iterator(root, ec)) {
+        if (!item.path().filename().wstring().starts_with(L".rollback-")) return false;
+    }
+    return true;
 }
 bool admin() { SID_IDENTIFIER_AUTHORITY authority=SECURITY_NT_AUTHORITY;PSID group=nullptr;BOOL member=FALSE;
     if(AllocateAndInitializeSid(&authority,2,SECURITY_BUILTIN_DOMAIN_RID,DOMAIN_ALIAS_RID_ADMINS,0,0,0,0,0,0,&group)){CheckTokenMembership(nullptr,group,&member);FreeSid(group);}return member!=FALSE;
@@ -224,9 +291,10 @@ int run(const std::vector<std::wstring>& args) {
         MessageBoxW(nullptr,pending?L"AutoKeyboard was uninstalled. Restart Windows to remove files still in use. Your personal word bank was kept.":L"AutoKeyboard was uninstalled. Your personal word bank was kept.",L"AutoKeyboard",MB_OK|MB_ICONINFORMATION);
         return 0;
     }
+    clear_live_pending_operations(root);
     auto pending=registry_value(L"SYSTEM\\CurrentControlSet\\Control\\Session Manager",L"PendingFileRenameOperations",RRF_RT_REG_MULTI_SZ);
     if(ak::setup::pending_change(root,pending))throw std::runtime_error("An earlier uninstall or update has pending file changes. Save your work and restart Windows before installing AutoKeyboard. Your personal word bank will be kept.");
-    bool repair=(std::filesystem::exists(root/L"AutoKeyboardIME.dll") && std::filesystem::exists(root/L"AutoKeyboard.exe")) ||
+    bool repair=std::filesystem::exists(root/L"AutoKeyboardIME.dll") || std::filesystem::exists(root/L"AutoKeyboard.exe") || std::filesystem::exists(root/L"AutoKeyboardSetup.exe") || has_only_rollback_entries(root) ||
         ak::setup::registered_installation(root,registry_value(UninstallKey,L"DisplayName",RRF_RT_REG_SZ),registry_value(UninstallKey,L"InstallLocation",RRF_RT_REG_SZ));
     if(std::filesystem::exists(root) && ((GetFileAttributesW(root.c_str())&FILE_ATTRIBUTE_REPARSE_POINT) || !std::filesystem::is_directory(root) || (!repair && !std::filesystem::is_empty(root))))throw std::runtime_error("The installation folder contains unrecognized files; choose a clean AutoKeyboard installation.");
     if(HWND tray=FindWindowW(L"AutoKeyboard.Settings.1",nullptr)) {
