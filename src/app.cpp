@@ -31,7 +31,7 @@ std::wstring get_text(HWND window) {
 struct ImportOutcome { ImportBatch batch; int64_t id = 0; std::wstring error; };
 class App {
     HWND window_{};
-    HFONT font_{}, titleFont_{};
+    HFONT font_{}, titleFont_{}, sectionFont_{};
     HICON icon_{};
     NOTIFYICONDATAW tray_{};
     Engine engine_;
@@ -123,6 +123,19 @@ class App {
         notice_ = L"Settings saved. Active keyboards refresh when you finish the current word (within 1.5 seconds).";
         SetWindowTextW(noticeLabel_, notice_.c_str());
         preview();
+    }
+    void auto_save_controls() {
+        try {
+            settings_ = selected_settings();
+        } catch (...) {
+            settings_.mode = SendMessageW(control(ModeSelect), CB_GETCURSEL, 0, 0) == 1 ? Mode::Automatic : Mode::Cautious;
+            settings_.locked = SendMessageW(control(Lock), BM_GETCHECK, 0, 0) == BST_CHECKED;
+            settings_.excluded_apps = get_text(control(Exclusions));
+            if (control(GlobalHookToggle)) settings_.global_hook = SendMessageW(control(GlobalHookToggle), BM_GETCHECK, 0, 0) == BST_CHECKED;
+            if (control(AltShiftToggle)) settings_.alt_shift_shortcut = SendMessageW(control(AltShiftToggle), BM_GETCHECK, 0, 0) == BST_CHECKED;
+        }
+        store_->save_settings(settings_); apply(engine_, settings_);
+        sync_hook(); update_tray(); preview();
     }
     void settings_to_controls() {
         SendMessageW(control(ModeSelect), CB_SETCURSEL, settings_.mode == Mode::Automatic ? 1 : 0, 0);
@@ -281,10 +294,11 @@ class App {
     }
     void create_controls() {
         font_ = CreateFontW(-scaled(16),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
-        titleFont_ = CreateFontW(-scaled(28),0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
-        heading_ = add(L"STATIC", L"Arabic and English. Keep typing.",0,0,28,20,740,40);
+        titleFont_ = CreateFontW(-scaled(26),0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
+        sectionFont_ = CreateFontW(-scaled(15),0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
+        heading_ = add(L"STATIC", L"Just Type — اكتب بلا هم",0,0,28,20,740,38);
         SendMessageW(heading_, WM_SETFONT, reinterpret_cast<WPARAM>(titleFont_), TRUE);
-        caption_ = add(L"STATIC", L"Local dictionaries and fixed rules. No AI. No typing history.",0,0,30,65,740,25);
+        caption_ = add(L"STATIC", L"Smart Arabic & English Keyboard Switcher • تبديل تلقائي ذكي بين العربية والإنجليزية",0,0,30,62,740,25);
         status_ = add(L"STATIC", L"Just Type (اكتب بلا هم) | not active",0,0,30,98,395,26);
         add(L"BUTTON",L"Activate keyboard",BS_PUSHBUTTON|WS_TABSTOP,ActivateKeyboard,435,94,180,31);
         add(L"BUTTON",L"Diagnostics",BS_PUSHBUTTON|WS_TABSTOP,Diagnostics,630,94,140,31);
@@ -305,9 +319,10 @@ class App {
         add(L"BUTTON",L"Universal global hook & auto layout switch",BS_AUTOCHECKBOX | WS_TABSTOP,GlobalHookToggle,30,320,355,26);
         add(L"BUTTON",L"Direct Alt+Shift EN/AR switch",BS_AUTOCHECKBOX | WS_TABSTOP,AltShiftToggle,395,320,235,26);
         add(L"BUTTON",L"Protected words...",BS_PUSHBUTTON | WS_TABSTOP,ProtectedWords,640,318,130,30);
-        label(L"WORD BANK",30,358,400);
-        label(L"PDF language",370,358,130);
-        add(L"COMBOBOX",L"",CBS_DROPDOWNLIST | WS_TABSTOP,ImportTarget,505,352,265,180);
+        HWND wbHeader = add(L"STATIC", L"WORD BANK & PDF IMPORT", 0, 0, 30, 362, 330, 22);
+        SendMessageW(wbHeader, WM_SETFONT, reinterpret_cast<WPARAM>(sectionFont_), TRUE);
+        label(L"PDF language",370,362,130);
+        add(L"COMBOBOX",L"",CBS_DROPDOWNLIST | WS_TABSTOP,ImportTarget,505,358,265,180);
         SendMessageW(control(ImportTarget),CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"Automatic by character ranges"));
         for(const auto& pack:engine_.packs)SendMessageW(control(ImportTarget),CB_ADDSTRING,0,reinterpret_cast<LPARAM>(pack.name.c_str()));
         SendMessageW(control(ImportTarget),CB_SETCURSEL,0,0);
@@ -318,7 +333,8 @@ class App {
         EnableWindow(control(CancelImport), FALSE);
         add(L"LISTBOX",L"",LBS_NOTIFY | WS_VSCROLL | WS_HSCROLL | WS_TABSTOP,History,30,432,740,86);
         noticeLabel_ = add(L"STATIC",notice_.c_str(),0,0,30,528,740,48);
-        label(L"TRY A WORD (physical US keys)",30,585,400);
+        HWND tryHeader = add(L"STATIC", L"TRY A WORD (physical US keys)", 0, 0, 30, 588, 400, 22);
+        SendMessageW(tryHeader, WM_SETFONT, reinterpret_cast<WPARAM>(sectionFont_), TRUE);
         add(L"EDIT",L"hgsghl",ES_AUTOHSCROLL | WS_TABSTOP,PreviewKeys,30,615,275,29);
         add(L"COMBOBOX",L"",CBS_DROPDOWNLIST | WS_TABSTOP,PreviewLanguage,320,615,220,160);
         for (const auto& pack : engine_.packs) SendMessageW(control(PreviewLanguage), CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(pack.name.c_str()));
@@ -332,6 +348,26 @@ class App {
         if(taskbarCreated_ && message==taskbarCreated_){Shell_NotifyIconW(NIM_ADD,&tray_);update_tray();return 0;}
         switch (message) {
         case WM_CREATE: create_controls(); return 0;
+        case WM_PAINT: {
+            PAINTSTRUCT ps{};
+            HDC hdc = BeginPaint(window_, &ps);
+            RECT rc{}; GetClientRect(window_, &rc);
+            FillRect(hdc, &rc, bgBrush_ ? bgBrush_ : reinterpret_cast<HBRUSH>(COLOR_WINDOW+1));
+            if (cardBrush_ && borderPen_) {
+                HGDIOBJ oldBrush = SelectObject(hdc, cardBrush_);
+                HGDIOBJ oldPen = SelectObject(hdc, borderPen_);
+                int r = scaled(10);
+                int left = scaled(16), right = std::max(scaled(788), static_cast<int>(rc.right) - scaled(16));
+                RoundRect(hdc, left, scaled(12) - scroll_, right, scaled(130) - scroll_, r, r);
+                RoundRect(hdc, left, scaled(132) - scroll_, right, scaled(352) - scroll_, r, r);
+                RoundRect(hdc, left, scaled(354) - scroll_, right, scaled(580) - scroll_, r, r);
+                RoundRect(hdc, left, scaled(582) - scroll_, right, scaled(762) - scroll_, r, r);
+                SelectObject(hdc, oldBrush);
+                SelectObject(hdc, oldPen);
+            }
+            EndPaint(window_, &ps);
+            return 0;
+        }
         case WM_TIMER: update_tray(); return 0;
         case WM_SIZE: {
             RECT client{};GetClientRect(window_,&client);
@@ -346,8 +382,10 @@ class App {
                 case SB_PAGEUP:next-=info.nPage;break;case SB_PAGEDOWN:next+=info.nPage;break;
                 case SB_THUMBTRACK:next=info.nTrackPos;break;default:return 0;}
             next=std::clamp(next,0,std::max(0,info.nMax-static_cast<int>(info.nPage)+1));
-            ScrollWindowEx(window_,0,scroll_-next,nullptr,nullptr,nullptr,nullptr,SW_SCROLLCHILDREN|SW_INVALIDATE|SW_ERASE);
-            scroll_=next;SetScrollPos(window_,SB_VERT,scroll_,TRUE);return 0;
+            int dy = scroll_ - next;
+            scroll_ = next; SetScrollPos(window_, SB_VERT, scroll_, TRUE);
+            ScrollWindowEx(window_, 0, dy, nullptr, nullptr, nullptr, nullptr, SW_SCROLLCHILDREN);
+            InvalidateRect(window_, nullptr, TRUE); return 0;
         }
         case TrayCallback:
             if (l == WM_RBUTTONUP || l == WM_CONTEXTMENU) menu();
@@ -362,7 +400,7 @@ class App {
             else if(id==ActivateKeyboard || id==TrayActivate)activate();
             else if(id==Diagnostics || id==TrayDiagnostics)diagnostics();
             else if(id==ProtectedWords || id==TrayProtectedWords)edit_protected_words();
-            else if (id == BankFilter) { EnableWindow(control(BankMinimum), SendMessageW(control(BankFilter),BM_GETCHECK,0,0) == BST_CHECKED); preview(); }
+            else if (id == BankFilter) { EnableWindow(control(BankMinimum), SendMessageW(control(BankFilter),BM_GETCHECK,0,0) == BST_CHECKED); auto_save_controls(); }
             else if (id == Import) import_pdf();
             else if (id == CancelImport) { cancelled_ = true; SetWindowTextW(noticeLabel_,L"Cancelling import..."); }
             else if (id == UndoImport) {
@@ -389,16 +427,9 @@ class App {
                 else settings_.mode = id == TrayAutomatic ? Mode::Automatic : Mode::Cautious;
                 store_->save_settings(settings_); apply(engine_, settings_); settings_to_controls(); update_tray(); preview();
             } else if (id == Lock || id == GlobalHookToggle || id == AltShiftToggle) {
-                if (id == Lock) settings_.locked = SendMessageW(control(Lock), BM_GETCHECK, 0, 0) == BST_CHECKED;
-                if (id == GlobalHookToggle) {
-                    settings_.global_hook = SendMessageW(control(GlobalHookToggle), BM_GETCHECK, 0, 0) == BST_CHECKED;
-                    sync_hook();
-                }
-                if (id == AltShiftToggle) settings_.alt_shift_shortcut = SendMessageW(control(AltShiftToggle), BM_GETCHECK, 0, 0) == BST_CHECKED;
-                store_->save_settings(settings_); apply(engine_, settings_); update_tray(); preview();
+                auto_save_controls();
             } else if (id == ModeSelect && notification == CBN_SELCHANGE) {
-                settings_.mode = SendMessageW(control(ModeSelect), CB_GETCURSEL, 0, 0) == 1 ? Mode::Automatic : Mode::Cautious;
-                store_->save_settings(settings_); apply(engine_, settings_); update_tray(); preview();
+                auto_save_controls();
             } else if (notification == EN_CHANGE || notification == CBN_SELCHANGE) preview();
             return 0;
         }
@@ -408,6 +439,7 @@ class App {
             FillRect(hdc, &rc, bgBrush_ ? bgBrush_ : reinterpret_cast<HBRUSH>(COLOR_WINDOW+1));
             return 1;
         }
+        case WM_CTLCOLORBTN:
         case WM_CTLCOLORSTATIC: {
             HDC hdc = reinterpret_cast<HDC>(w);
             SetBkMode(hdc, TRANSPARENT);
@@ -444,6 +476,7 @@ public:
         if (worker_.joinable()) { cancelled_ = true; worker_.join(); }
         if (font_) DeleteObject(font_);
         if (titleFont_) DeleteObject(titleFont_);
+        if (sectionFont_) DeleteObject(sectionFont_);
         if (bgBrush_) DeleteObject(bgBrush_);
         if (cardBrush_) DeleteObject(cardBrush_);
         if (borderPen_) DeleteObject(borderPen_);

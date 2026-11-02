@@ -250,7 +250,14 @@ Decision GlobalHook::decide_with_trailing_punctuation(const std::vector<Stroke>&
         if (core_d.changed && core_d.language != current_lang) {
             std::vector<Stroke> punct_strokes(strokes.end() - punct_count, strokes.end());
             std::wstring tail = engine_.render(punct_strokes, core_d.language);
-            if (!tail.empty() && letter_count(tail) == 0) {
+            bool pure_punct = !tail.empty();
+            for (wchar_t ch : tail) {
+                if (letter(ch) || mark(ch) || ch == 0x0640 || (ch >= L'0' && ch <= L'9')) {
+                    pure_punct = false;
+                    break;
+                }
+            }
+            if (pure_punct) {
                 core_d.text += tail;
                 return core_d;
             }
@@ -295,6 +302,24 @@ bool GlobalHook::process_key(WPARAM message, const KBDLLHOOKSTRUCT& info, HWND f
         last_word_ = {};
     }
 
+    if (down && callbacks_.sync_os_modifiers) {
+        auto os_down = [](int vk, int generic_vk) {
+            return (GetAsyncKeyState(vk) & 0x8000) != 0 || (GetAsyncKeyState(generic_vk) & 0x8000) != 0;
+        };
+        if (lshift_ && !os_down(VK_LSHIFT, VK_SHIFT)) lshift_ = false;
+        if (rshift_ && !os_down(VK_RSHIFT, VK_SHIFT)) rshift_ = false;
+        shift_ = lshift_ || rshift_;
+        if (lctrl_ && !os_down(VK_LCONTROL, VK_CONTROL)) lctrl_ = false;
+        if (rctrl_ && !os_down(VK_RCONTROL, VK_CONTROL)) rctrl_ = false;
+        ctrl_ = lctrl_ || rctrl_;
+        if (lalt_ && !os_down(VK_LMENU, VK_MENU)) lalt_ = false;
+        if (ralt_ && !os_down(VK_RMENU, VK_MENU)) ralt_ = false;
+        alt_ = lalt_ || ralt_;
+        if (lwin_ && (GetAsyncKeyState(VK_LWIN) & 0x8000) == 0) lwin_ = false;
+        if (rwin_ && (GetAsyncKeyState(VK_RWIN) & 0x8000) == 0) rwin_ = false;
+        win_ = lwin_ || rwin_;
+    }
+
     switch (info.vkCode) {
     case VK_LSHIFT: lshift_ = down; shift_ = lshift_ || rshift_; break;
     case VK_RSHIFT: rshift_ = down; shift_ = lshift_ || rshift_; break;
@@ -336,21 +361,6 @@ bool GlobalHook::process_key(WPARAM message, const KBDLLHOOKSTRUCT& info, HWND f
 
     alt_shift_armed_ = false;
     if (!down) return false;
-
-    if (callbacks_.sync_os_modifiers) {
-        lshift_ = (GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0;
-        rshift_ = (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
-        shift_ = lshift_ || rshift_;
-        lctrl_ = (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0;
-        rctrl_ = (GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0;
-        ctrl_ = lctrl_ || rctrl_;
-        lalt_ = (GetAsyncKeyState(VK_LMENU) & 0x8000) != 0;
-        ralt_ = (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
-        alt_ = lalt_ || ralt_;
-        lwin_ = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0;
-        rwin_ = (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
-        win_ = lwin_ || rwin_;
-    }
 
     if (ctrl_ && alt_ && !win_) {
         if (info.vkCode == 'L' || info.vkCode == 'P') {
@@ -449,22 +459,27 @@ bool GlobalHook::process_key(WPARAM message, const KBDLLHOOKSTRUCT& info, HWND f
     case VK_BACK:
         undo_ = {};
         last_word_ = {};
-        if (valid_word_ && !strokes_.empty()) {
-            strokes_.pop_back();
+        if (valid_word_) {
+            if (!strokes_.empty()) strokes_.pop_back();
+            else clear(true);
             return false;
         }
-        clear(true);
+        clear(false);
         return false;
     case VK_LEFT:
     case VK_RIGHT:
+    case VK_INSERT:
+    case VK_DELETE:
+        undo_ = {};
+        last_word_ = {};
+        clear(strokes_.empty() && valid_word_);
+        return false;
     case VK_UP:
     case VK_DOWN:
     case VK_HOME:
     case VK_END:
     case VK_PRIOR:
     case VK_NEXT:
-    case VK_INSERT:
-    case VK_DELETE:
         undo_ = {};
         last_word_ = {};
         clear(true);

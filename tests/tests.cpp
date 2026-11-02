@@ -311,6 +311,23 @@ int main() {
         key_down(0x31); key_up(0x31); // '!'
         key_up(VK_LSHIFT);
         check(tap(VK_SPACE) && lastReplaced.find(L"السلام") != std::wstring::npos && activeLang == "ar", "multi-exclamation trailing punctuation failed to convert");
+
+        // 10. Single Backspace after invalid token ("mp4") does NOT corrupt remaining prefix ("mp")
+        activeLang = "en"; lastBackspaces = 0; lastReplaced.clear();
+        tap('M'); tap('P'); tap('4');
+        tap(VK_BACK); // deletes '4', leaving "mp" before caret
+        for (char c : std::string("HGSGHL")) tap(static_cast<DWORD>(c));
+        check(!tap(VK_SPACE) && lastReplaced.empty(), "single backspace after mp4 corrupted mp prefix");
+
+        // 11. Mid-word Left Arrow ("hel" + Left + "hgsghl") does NOT convert inside existing word
+        activeLang = "en"; lastBackspaces = 0; lastReplaced.clear();
+        for (char c : std::string("HEL")) tap(static_cast<DWORD>(c));
+        tap(VK_LEFT); // caret is now inside "he|l"
+        for (char c : std::string("HGSGHL")) tap(static_cast<DWORD>(c));
+        check(!tap(VK_SPACE) && lastReplaced.empty(), "mid-word VK_LEFT converted inside existing word");
+        // Subsequent word after Space boundary converts normally
+        for (char c : std::string("HGSGHL")) tap(static_cast<DWORD>(c));
+        check(tap(VK_SPACE) && lastReplaced == L"السلام " && activeLang == "ar", "word after mid-word edit boundary did not convert");
     });
     std::cout << passed << " passed, " << failed << " failed\n";
     // Only files created by this test process are removed.
