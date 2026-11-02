@@ -203,7 +203,9 @@ int run(const std::vector<std::wstring>& args) {
                     STARTUPINFOW startup{};startup.cb=sizeof(startup);PROCESS_INFORMATION process{};
                     if(CreateProcessW(exe.c_str(),command.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&startup,&process)){
                         DWORD waited=WaitForSingleObject(process.hProcess,30000);if(waited!=WAIT_OBJECT_0){TerminateProcess(process.hProcess,1);WaitForSingleObject(process.hProcess,5000);}DWORD configured=1;GetExitCodeProcess(process.hProcess,&configured);CloseHandle(process.hThread);CloseHandle(process.hProcess);
-                        if(configured)MessageBoxW(nullptr,L"Machine installation succeeded. Open AutoKeyboard normally and click Activate keyboard to finish your user's configuration.",L"AutoKeyboard",MB_OK|MB_ICONINFORMATION);
+                        if(configured)MessageBoxW(nullptr,L"Machine installation succeeded. Open Just Type normally to finish your user's configuration.",L"Just Type (اكتب بلا هم)",MB_OK|MB_ICONINFORMATION);
+                        auto appExe=known_folder(FOLDERID_ProgramFiles)/L"AutoKeyboard/AutoKeyboard.exe";
+                        ShellExecuteW(nullptr,L"open",appExe.c_str(),nullptr,appExe.parent_path().c_str(),SW_SHOWNORMAL);
                     }
                 }
             }
@@ -295,10 +297,10 @@ int run(const std::vector<std::wstring>& args) {
         std::rethrow_exception(original);
     }
     if(repair){try{remove_files(backup,entries);}catch(...){}}
-    std::wstring completed=L"AutoKeyboard "+ak::wide(AK_VERSION)+L" machine installation is complete. Your word bank and settings were kept.\n\n";
+    std::wstring completed=L"Just Type (اكتب بلا هم) "+ak::wide(AK_VERSION)+L" installation is complete! Your word bank and settings were kept.\n\n";
     completed+=repair?L"Save your work and restart Windows before testing this update. Explorer, Start search and other open applications can keep the previous keyboard version active until a restart.\n\n":L"Close and reopen your editors.\n\n";
-    completed+=L"Open AutoKeyboard from Start and click Activate keyboard. Select Automatic Arabic / English with Win + Space, then type hgsghl followed by Space in Notepad.";
-    MessageBoxW(nullptr,completed.c_str(),L"AutoKeyboard",MB_OK|MB_ICONINFORMATION);
+    completed+=L"Universal Global Hook is active automatically across all apps — just type in Arabic or English (for example hgsghl followed by Space) and Just Type will convert and switch your keyboard layout.";
+    MessageBoxW(nullptr,completed.c_str(),L"Just Type (اكتب بلا هم)",MB_OK|MB_ICONINFORMATION);
     // Start the tray from the Start menu in the user's normal desktop session;
     // do not launch an elevated keyboard-settings process from this installer.
     return 0;

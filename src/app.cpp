@@ -47,14 +47,18 @@ class App {
     std::mutex outcomeMutex_;
     std::unique_ptr<ImportOutcome> outcome_;
     std::wstring notice_ = L"Universal Global Hook is active: works in all apps and switches English / Arabic automatically.";
-    HBRUSH bgBrush_{}, cardBrush_{};
+    std::wstring lastStatus_;
+    bool statusLocked_ = false, statusActive_ = true;
+    HBRUSH bgBrush_{}, cardBrush_{}, accentBrush_{};
     HPEN borderPen_{};
-    HWND heading_{}, caption_{}, status_{}, noticeLabel_{}, previewLabel_{};
+    HWND heading_{}, caption_{}, status_{}, noticeLabel_{}, previewLabel_{}, shortcutsLabel_{};
+    HWND swHeader_{}, wbHeader_{}, tryHeader_{};
     UINT taskbarCreated_=RegisterWindowMessageW(L"TaskbarCreated");
     int dpi_=96,scroll_=0;
     int scaled(int value)const{return MulDiv(value,dpi_,96);}
     HWND control(int id) const { return GetDlgItem(window_, id); }
     HWND add(const wchar_t* cls, const wchar_t* label, DWORD style, int id, int x, int y, int width, int height) {
+        if (wcscmp(cls, L"STATIC") == 0) style |= SS_NOPREFIX;
         auto result = CreateWindowExW(wcscmp(cls, L"EDIT") == 0 || wcscmp(cls, L"LISTBOX") == 0 ? WS_EX_CLIENTEDGE : 0,
             cls, label, WS_CHILD | WS_VISIBLE | style, scaled(x), scaled(y), scaled(width), scaled(height), window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), GetModuleHandleW(nullptr), nullptr);
         SendMessageW(result, WM_SETFONT, reinterpret_cast<WPARAM>(font_), TRUE);
@@ -66,8 +70,8 @@ class App {
         HRESULT hr=configure_current_user();
         if(hr==S_OK)hr=activate_keyboard(true);
         if(hr!=S_OK) {
-            notice_=L"Windows could not activate the keyboard ("+hresult_text(hr)+L"). Open Diagnostics for details.";
-        } else notice_=L"Activation requested. Reopen your editor, then select Automatic Arabic / English with Win + Space if needed.";
+            notice_=L"Windows could not activate the TSF keyboard ("+hresult_text(hr)+L"). Note: Universal Global Hook already works without TSF.";
+        } else notice_=L"TSF keyboard activation requested. Universal Global Hook is also active across all apps.";
         SetWindowTextW(noticeLabel_,notice_.c_str());
     }
     void diagnostics() { MessageBoxW(window_,keyboard_diagnostics().c_str(),L"Just Type (اكتب بلا هم) - Diagnostics",MB_OK|MB_ICONINFORMATION); }
@@ -268,12 +272,31 @@ class App {
             language = wide(engine_.packs[state.language].id);
         }
         std::wstring mode = (!hookActive && state.pid ? state.mode != 0 : settings_.mode == Mode::Automatic) ? L"Automatic" : L"Cautious";
-        std::wstring text = L"Just Type (اكتب بلا هم) | " + language + L" | " + mode;
-        if (hookActive) text += L" | Hook";
-        if (!hookActive && state.pid ? state.locked != 0 : settings_.locked) text += L" | Locked";
-        wcsncpy_s(tray_.szTip, text.c_str(), _TRUNCATE);
+        bool locked = (!hookActive && state.pid ? state.locked != 0 : settings_.locked);
+        std::wstring tipText = L"Just Type (اكتب بلا هم) | " + language + L" | " + mode;
+        if (hookActive) tipText += L" | Hook";
+        if (locked) tipText += L" | Locked";
+        wcsncpy_s(tray_.szTip, tipText.c_str(), _TRUNCATE);
         Shell_NotifyIconW(NIM_MODIFY, &tray_);
-        SetWindowTextW(status_, text.c_str());
+
+        std::wstring langDisplay = (language == L"ar") ? L"العربية (AR)" : (language == L"en" ? L"English (EN)" : language);
+        std::wstring uiStatus;
+        if (locked) {
+            uiStatus = L"● Locked (" + langDisplay + L")  •  Mode: " + mode + L"  (Ctrl+Alt+L to unlock)";
+        } else if (hookActive) {
+            uiStatus = L"● Active in all apps  •  Layout: " + langDisplay + L"  •  Mode: " + mode;
+        } else if (state.pid) {
+            uiStatus = L"● Active (TSF)  •  Layout: " + langDisplay + L"  •  Mode: " + mode;
+        } else {
+            uiStatus = L"○ Standby  •  Enable Global Hook below or click Activate TSF keyboard";
+        }
+        statusLocked_ = locked;
+        statusActive_ = hookActive || state.pid != 0;
+        if (status_ && uiStatus != lastStatus_) {
+            lastStatus_ = uiStatus;
+            SetWindowTextW(status_, uiStatus.c_str());
+            InvalidateRect(status_, nullptr, TRUE);
+        }
     }
     void menu() {
         HMENU menu = CreatePopupMenu();
@@ -293,55 +316,67 @@ class App {
         PostMessageW(window_, WM_NULL, 0, 0); DestroyMenu(menu);
     }
     void create_controls() {
-        font_ = CreateFontW(-scaled(16),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
-        titleFont_ = CreateFontW(-scaled(26),0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
-        sectionFont_ = CreateFontW(-scaled(15),0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
-        heading_ = add(L"STATIC", L"Just Type — اكتب بلا هم",0,0,28,20,740,38);
+        font_ = CreateFontW(-scaled(15),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
+        titleFont_ = CreateFontW(-scaled(24),0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
+        sectionFont_ = CreateFontW(-scaled(14),0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
+
+        // Card 1: Header & Live Status (y = 10..122)
+        heading_ = add(L"STATIC", L"Just Type — اكتب بلا هم",0,0,74,20,695,34);
         SendMessageW(heading_, WM_SETFONT, reinterpret_cast<WPARAM>(titleFont_), TRUE);
-        caption_ = add(L"STATIC", L"Smart Arabic & English Keyboard Switcher • تبديل تلقائي ذكي بين العربية والإنجليزية",0,0,30,62,740,25);
-        status_ = add(L"STATIC", L"Just Type (اكتب بلا هم) | not active",0,0,30,98,395,26);
-        add(L"BUTTON",L"Activate keyboard",BS_PUSHBUTTON|WS_TABSTOP,ActivateKeyboard,435,94,180,31);
-        add(L"BUTTON",L"Diagnostics",BS_PUSHBUTTON|WS_TABSTOP,Diagnostics,630,94,140,31);
-        label(L"Switching mode",30,140,160);
-        add(L"COMBOBOX",L"",CBS_DROPDOWNLIST | WS_TABSTOP,ModeSelect,220,135,300,200);
+        caption_ = add(L"STATIC", L"Smart Arabic & English Keyboard Switcher  •  تبديل تلقائي ذكي بين العربية والإنجليزية",0,0,76,54,695,22);
+        status_ = add(L"STATIC", L"● Active in all apps  •  Layout: English (EN)  •  Mode: Automatic",0,0,30,86,445,24);
+        SendMessageW(status_, WM_SETFONT, reinterpret_cast<WPARAM>(sectionFont_), TRUE);
+        add(L"BUTTON",L"Activate TSF keyboard",BS_PUSHBUTTON|WS_TABSTOP,ActivateKeyboard,485,82,165,29);
+        add(L"BUTTON",L"Diagnostics",BS_PUSHBUTTON|WS_TABSTOP,Diagnostics,660,82,115,29);
+
+        // Card 2: Switching & Behavior (y = 130..358)
+        swHeader_ = add(L"STATIC", L"SWITCHING & BEHAVIOR", 0, 0, 30, 140, 400, 20);
+        SendMessageW(swHeader_, WM_SETFONT, reinterpret_cast<WPARAM>(sectionFont_), TRUE);
+        label(L"Switching mode",30,170,145);
+        add(L"COMBOBOX",L"",CBS_DROPDOWNLIST | WS_TABSTOP,ModeSelect,185,166,330,200);
         SendMessageW(control(ModeSelect), CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Cautious - only a clear alternative"));
         SendMessageW(control(ModeSelect), CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Automatic - rank valid matches"));
-        add(L"BUTTON",L"Lock current language",BS_AUTOCHECKBOX | WS_TABSTOP,Lock,545,136,225,27);
-        add(L"BUTTON",L"Filter bank by length",BS_AUTOCHECKBOX | WS_TABSTOP,BankFilter,30,180,185,26);
-        add(L"EDIT",L"4",ES_NUMBER | WS_TABSTOP,BankMinimum,220,178,55,27);
-        label(L"letters minimum (uncheck to include short words)",288,181,485);
-        label(L"Automatic switching minimum",30,220,240);
-        add(L"EDIT",L"4",ES_NUMBER | WS_TABSTOP,SwitchMinimum,280,216,55,27);
-        label(L"letters; manual conversion ignores this limit",350,220,420);
-        label(L"Excluded applications (executable names separated by ;)",30,260,740);
-        add(L"EDIT",L"",ES_AUTOHSCROLL | WS_TABSTOP,Exclusions,30,286,590,28);
-        add(L"BUTTON",L"Save settings",BS_PUSHBUTTON | WS_TABSTOP,Save,640,284,130,32);
-        add(L"BUTTON",L"Universal global hook & auto layout switch",BS_AUTOCHECKBOX | WS_TABSTOP,GlobalHookToggle,30,320,355,26);
-        add(L"BUTTON",L"Direct Alt+Shift EN/AR switch",BS_AUTOCHECKBOX | WS_TABSTOP,AltShiftToggle,395,320,235,26);
-        add(L"BUTTON",L"Protected words...",BS_PUSHBUTTON | WS_TABSTOP,ProtectedWords,640,318,130,30);
-        HWND wbHeader = add(L"STATIC", L"WORD BANK & PDF IMPORT", 0, 0, 30, 362, 330, 22);
-        SendMessageW(wbHeader, WM_SETFONT, reinterpret_cast<WPARAM>(sectionFont_), TRUE);
-        label(L"PDF language",370,362,130);
-        add(L"COMBOBOX",L"",CBS_DROPDOWNLIST | WS_TABSTOP,ImportTarget,505,358,265,180);
+        add(L"BUTTON",L"Lock current language",BS_AUTOCHECKBOX | WS_TABSTOP,Lock,535,167,235,25);
+        add(L"BUTTON",L"Filter bank by length",BS_AUTOCHECKBOX | WS_TABSTOP,BankFilter,30,200,185,25);
+        add(L"EDIT",L"4",ES_NUMBER | WS_TABSTOP,BankMinimum,220,199,55,25);
+        label(L"letters minimum (uncheck to include short words)",285,202,485);
+        label(L"Automatic switching minimum",30,234,235);
+        add(L"EDIT",L"4",ES_NUMBER | WS_TABSTOP,SwitchMinimum,270,231,55,25);
+        label(L"letters; manual conversion ignores this limit",335,234,435);
+        label(L"Excluded applications (executable names separated by ;)",30,263,590);
+        add(L"EDIT",L"",ES_AUTOHSCROLL | WS_TABSTOP,Exclusions,30,286,595,26);
+        add(L"BUTTON",L"Save settings",BS_PUSHBUTTON | WS_TABSTOP,Save,640,284,135,29);
+        add(L"BUTTON",L"Universal global hook && auto layout switch",BS_AUTOCHECKBOX | WS_TABSTOP,GlobalHookToggle,30,322,355,25);
+        add(L"BUTTON",L"Direct Alt+Shift EN/AR switch",BS_AUTOCHECKBOX | WS_TABSTOP,AltShiftToggle,395,322,235,25);
+        add(L"BUTTON",L"Protected words...",BS_PUSHBUTTON | WS_TABSTOP,ProtectedWords,640,320,135,28);
+
+        // Card 3: Word Bank & PDF Import (y = 366..558)
+        wbHeader_ = add(L"STATIC", L"WORD BANK & PDF IMPORT", 0, 0, 30, 378, 330, 20);
+        SendMessageW(wbHeader_, WM_SETFONT, reinterpret_cast<WPARAM>(sectionFont_), TRUE);
+        label(L"PDF language:",390,378,105);
+        add(L"COMBOBOX",L"",CBS_DROPDOWNLIST | WS_TABSTOP,ImportTarget,500,374,275,180);
         SendMessageW(control(ImportTarget),CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"Automatic by character ranges"));
         for(const auto& pack:engine_.packs)SendMessageW(control(ImportTarget),CB_ADDSTRING,0,reinterpret_cast<LPARAM>(pack.name.c_str()));
         SendMessageW(control(ImportTarget),CB_SETCURSEL,0,0);
-        add(L"BUTTON",L"Import PDF...",BS_PUSHBUTTON | WS_TABSTOP,Import,30,388,145,34);
-        add(L"BUTTON",L"Cancel import",BS_PUSHBUTTON | WS_TABSTOP,CancelImport,188,388,140,34);
-        add(L"BUTTON",L"Undo selected import",BS_PUSHBUTTON | WS_TABSTOP,UndoImport,342,388,195,34);
-        add(L"BUTTON",L"Open local bank folder",BS_PUSHBUTTON | WS_TABSTOP,OpenFolder,550,388,220,34);
+        add(L"BUTTON",L"Import PDF...",BS_PUSHBUTTON | WS_TABSTOP,Import,30,408,145,30);
+        add(L"BUTTON",L"Cancel import",BS_PUSHBUTTON | WS_TABSTOP,CancelImport,188,408,140,30);
+        add(L"BUTTON",L"Undo selected import",BS_PUSHBUTTON | WS_TABSTOP,UndoImport,342,408,195,30);
+        add(L"BUTTON",L"Open local bank folder",BS_PUSHBUTTON | WS_TABSTOP,OpenFolder,550,408,225,30);
         EnableWindow(control(CancelImport), FALSE);
-        add(L"LISTBOX",L"",LBS_NOTIFY | WS_VSCROLL | WS_HSCROLL | WS_TABSTOP,History,30,432,740,86);
-        noticeLabel_ = add(L"STATIC",notice_.c_str(),0,0,30,528,740,48);
-        HWND tryHeader = add(L"STATIC", L"TRY A WORD (physical US keys)", 0, 0, 30, 588, 400, 22);
-        SendMessageW(tryHeader, WM_SETFONT, reinterpret_cast<WPARAM>(sectionFont_), TRUE);
-        add(L"EDIT",L"hgsghl",ES_AUTOHSCROLL | WS_TABSTOP,PreviewKeys,30,615,275,29);
-        add(L"COMBOBOX",L"",CBS_DROPDOWNLIST | WS_TABSTOP,PreviewLanguage,320,615,220,160);
+        add(L"LISTBOX",L"",LBS_NOTIFY | WS_VSCROLL | WS_HSCROLL | WS_TABSTOP,History,30,446,745,68);
+        noticeLabel_ = add(L"STATIC",notice_.c_str(),0,0,30,520,745,32);
+
+        // Card 4: Live Preview & Shortcuts (y = 566..716)
+        tryHeader_ = add(L"STATIC", L"TRY A WORD — LIVE PREVIEW (physical US keys)", 0, 0, 30, 576, 480, 20);
+        SendMessageW(tryHeader_, WM_SETFONT, reinterpret_cast<WPARAM>(sectionFont_), TRUE);
+        add(L"EDIT",L"hgsghl",ES_AUTOHSCROLL | WS_TABSTOP,PreviewKeys,30,602,275,27);
+        add(L"COMBOBOX",L"",CBS_DROPDOWNLIST | WS_TABSTOP,PreviewLanguage,320,602,220,160);
         for (const auto& pack : engine_.packs) SendMessageW(control(PreviewLanguage), CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(pack.name.c_str()));
         SendMessageW(control(PreviewLanguage), CB_SETCURSEL, 0, 0);
-        add(L"BUTTON",L"Prefer this language",BS_PUSHBUTTON | WS_TABSTOP,Prefer,555,614,215,32);
-        previewLabel_ = add(L"STATIC",L"",0,PreviewResult,30,657,740,56);
-        label(L"Ctrl+Alt+Space: convert   Ctrl+Alt+Backspace: undo   Ctrl+Alt+L/P: lock   Alt+Shift: EN/AR",30,730,745,25);
+        add(L"BUTTON",L"Prefer this language",BS_PUSHBUTTON | WS_TABSTOP,Prefer,555,600,220,30);
+        previewLabel_ = add(L"STATIC",L"",0,PreviewResult,30,636,745,42);
+        shortcutsLabel_ = add(L"STATIC",L"Shortcuts:   Ctrl+Alt+Space: Convert     Ctrl+Alt+Backspace: Undo     Ctrl+Alt+L / P: Lock     Alt+Shift: EN / AR",0,0,30,686,745,22);
+
         settings_to_controls(); refresh_history(); preview();
     }
     LRESULT dispatch(UINT message, WPARAM w, LPARAM l) {
@@ -357,11 +392,26 @@ class App {
                 HGDIOBJ oldBrush = SelectObject(hdc, cardBrush_);
                 HGDIOBJ oldPen = SelectObject(hdc, borderPen_);
                 int r = scaled(10);
-                int left = scaled(16), right = std::max(scaled(788), static_cast<int>(rc.right) - scaled(16));
-                RoundRect(hdc, left, scaled(12) - scroll_, right, scaled(130) - scroll_, r, r);
-                RoundRect(hdc, left, scaled(132) - scroll_, right, scaled(352) - scroll_, r, r);
-                RoundRect(hdc, left, scaled(354) - scroll_, right, scaled(580) - scroll_, r, r);
-                RoundRect(hdc, left, scaled(582) - scroll_, right, scaled(762) - scroll_, r, r);
+                int left = scaled(16), right = std::max(scaled(790), static_cast<int>(rc.right) - scaled(16));
+                RoundRect(hdc, left, scaled(10) - scroll_, right, scaled(122) - scroll_, r, r);
+                RoundRect(hdc, left, scaled(130) - scroll_, right, scaled(358) - scroll_, r, r);
+                RoundRect(hdc, left, scaled(366) - scroll_, right, scaled(558) - scroll_, r, r);
+                RoundRect(hdc, left, scaled(566) - scroll_, right, scaled(716) - scroll_, r, r);
+                if (accentBrush_) {
+                    RECT stripe{left + scaled(4), scaled(10) - scroll_, right - scaled(4), scaled(14) - scroll_};
+                    FillRect(hdc, &stripe, accentBrush_);
+                    HGDIOBJ badgeBrush = SelectObject(hdc, accentBrush_);
+                    HGDIOBJ badgePen = SelectObject(hdc, GetStockObject(NULL_PEN));
+                    RECT badgeRc{scaled(28), scaled(22) - scroll_, scaled(66), scaled(60) - scroll_};
+                    RoundRect(hdc, badgeRc.left, badgeRc.top, badgeRc.right, badgeRc.bottom, scaled(10), scaled(10));
+                    SelectObject(hdc, badgeBrush);
+                    SelectObject(hdc, badgePen);
+                    SetBkMode(hdc, TRANSPARENT);
+                    SetTextColor(hdc, RGB(255, 255, 255));
+                    HGDIOBJ oldFont = SelectObject(hdc, sectionFont_ ? sectionFont_ : font_);
+                    DrawTextW(hdc, L"ع/A", -1, &badgeRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                    SelectObject(hdc, oldFont);
+                }
                 SelectObject(hdc, oldBrush);
                 SelectObject(hdc, oldPen);
             }
@@ -371,8 +421,16 @@ class App {
         case WM_TIMER: update_tray(); return 0;
         case WM_SIZE: {
             RECT client{};GetClientRect(window_,&client);
-            SCROLLINFO info{sizeof(info),SIF_RANGE|SIF_PAGE|SIF_POS,0,scaled(775),static_cast<UINT>(client.bottom),scroll_,0};
-            SetScrollInfo(window_,SB_VERT,&info,TRUE);return 0;
+            int contentHeight = scaled(724);
+            if (client.bottom >= contentHeight && scroll_ != 0) {
+                ScrollWindowEx(window_, 0, scroll_, nullptr, nullptr, nullptr, nullptr, SW_SCROLLCHILDREN);
+                scroll_ = 0;
+            }
+            SCROLLINFO info{sizeof(info),SIF_RANGE|SIF_PAGE|SIF_POS,0,contentHeight,static_cast<UINT>(client.bottom),scroll_,0};
+            SetScrollInfo(window_,SB_VERT,&info,TRUE);
+            ShowScrollBar(window_, SB_VERT, client.bottom < contentHeight);
+            InvalidateRect(window_, nullptr, TRUE);
+            return 0;
         }
         case WM_MOUSEWHEEL: SendMessageW(window_,WM_VSCROLL,GET_WHEEL_DELTA_WPARAM(w)>0?SB_LINEUP:SB_LINEDOWN,0);return 0;
         case WM_VSCROLL: {
@@ -442,8 +500,21 @@ class App {
         case WM_CTLCOLORBTN:
         case WM_CTLCOLORSTATIC: {
             HDC hdc = reinterpret_cast<HDC>(w);
+            HWND ctrl = reinterpret_cast<HWND>(l);
             SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, RGB(31, 41, 55));
+            if (ctrl == heading_) {
+                SetTextColor(hdc, RGB(15, 23, 42));
+            } else if (ctrl == swHeader_ || ctrl == wbHeader_ || ctrl == tryHeader_) {
+                SetTextColor(hdc, RGB(30, 64, 175));
+            } else if (ctrl == status_) {
+                if (statusLocked_) SetTextColor(hdc, RGB(180, 83, 9));
+                else if (statusActive_) SetTextColor(hdc, RGB(21, 128, 61));
+                else SetTextColor(hdc, RGB(100, 116, 139));
+            } else if (ctrl == caption_ || ctrl == shortcutsLabel_ || ctrl == noticeLabel_) {
+                SetTextColor(hdc, RGB(71, 85, 105));
+            } else {
+                SetTextColor(hdc, RGB(31, 41, 55));
+            }
             return reinterpret_cast<LRESULT>(cardBrush_ ? cardBrush_ : bgBrush_);
         }
         case WM_CTLCOLORDLG: {
@@ -479,6 +550,7 @@ public:
         if (sectionFont_) DeleteObject(sectionFont_);
         if (bgBrush_) DeleteObject(bgBrush_);
         if (cardBrush_) DeleteObject(cardBrush_);
+        if (accentBrush_) DeleteObject(accentBrush_);
         if (borderPen_) DeleteObject(borderPen_);
     }
     int run(bool quiet) {
@@ -487,9 +559,10 @@ public:
         protectedFile_ = protected_words_path();
         store_ = std::make_unique<Store>(bank_); settings_ = store_->settings();
         engine_.load(packs_folder()); reload_protected_words(true); apply(engine_,settings_);
-        bgBrush_ = CreateSolidBrush(RGB(243, 244, 246));
+        bgBrush_ = CreateSolidBrush(RGB(241, 245, 249));
         cardBrush_ = CreateSolidBrush(RGB(255, 255, 255));
-        borderPen_ = CreatePen(PS_SOLID, 1, RGB(229, 231, 235));
+        accentBrush_ = CreateSolidBrush(RGB(37, 99, 235));
+        borderPen_ = CreatePen(PS_SOLID, 1, RGB(219, 224, 233));
         HookCallbacks callbacks{};
         callbacks.sync_os_modifiers = true;
         callbacks.lock_changed = [this](bool locked) {
@@ -504,7 +577,7 @@ public:
         RegisterClassW(&cls);
         RECT work{};SystemParametersInfoW(SPI_GETWORKAREA,0,&work,0);
         if (!CreateWindowW(tray_class().c_str(),L"Just Type (اكتب بلا هم) 0.2.0 - Settings and word bank",WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
-            CW_USEDEFAULT,CW_USEDEFAULT,scaled(840),std::min(scaled(810),static_cast<int>(work.bottom-work.top)),nullptr,nullptr,cls.hInstance,this)) throw std::runtime_error("Cannot create settings window");
+            CW_USEDEFAULT,CW_USEDEFAULT,scaled(835),std::min(scaled(775),static_cast<int>(work.bottom-work.top)),nullptr,nullptr,cls.hInstance,this)) throw std::runtime_error("Cannot create settings window");
         tray_.cbSize = sizeof(tray_); tray_.hWnd = window_; tray_.uID = 1;
         tray_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP; tray_.uCallbackMessage = TrayCallback; tray_.hIcon = icon_;
         wcscpy_s(tray_.szTip,L"Just Type (اكتب بلا هم)"); Shell_NotifyIconW(NIM_ADD,&tray_); SetTimer(window_,1,750,nullptr);
