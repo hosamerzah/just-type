@@ -19,6 +19,7 @@ struct HookCallbacks {
     std::function<void(bool locked)> lock_changed;
     std::function<std::string(HWND foreground)> detect_language;
     std::function<bool(HWND foreground, HWND focus)> target_allowed;
+    bool sync_os_modifiers = false;
 };
 
 class GlobalHook {

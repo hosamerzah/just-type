@@ -47,6 +47,8 @@ class App {
     std::mutex outcomeMutex_;
     std::unique_ptr<ImportOutcome> outcome_;
     std::wstring notice_ = L"Universal Global Hook is active: works in all apps and switches English / Arabic automatically.";
+    HBRUSH bgBrush_{}, cardBrush_{};
+    HPEN borderPen_{};
     HWND heading_{}, caption_{}, status_{}, noticeLabel_{}, previewLabel_{};
     UINT taskbarCreated_=RegisterWindowMessageW(L"TaskbarCreated");
     int dpi_=96,scroll_=0;
@@ -59,7 +61,7 @@ class App {
         return result;
     }
     void label(const wchar_t* text, int x, int y, int w, int h=22) { add(L"STATIC", text, 0, 0, x,y,w,h); }
-    void error(const std::exception& exception) { MessageBoxW(window_, wide(exception.what()).c_str(), L"AutoKeyboard", MB_OK | MB_ICONERROR); }
+    void error(const std::exception& exception) { MessageBoxW(window_, wide(exception.what()).c_str(), L"Just Type (اكتب بلا هم)", MB_OK | MB_ICONERROR); }
     void activate() {
         HRESULT hr=configure_current_user();
         if(hr==S_OK)hr=activate_keyboard(true);
@@ -68,7 +70,7 @@ class App {
         } else notice_=L"Activation requested. Reopen your editor, then select Automatic Arabic / English with Win + Space if needed.";
         SetWindowTextW(noticeLabel_,notice_.c_str());
     }
-    void diagnostics() { MessageBoxW(window_,keyboard_diagnostics().c_str(),L"AutoKeyboard - Windows diagnostics",MB_OK|MB_ICONINFORMATION); }
+    void diagnostics() { MessageBoxW(window_,keyboard_diagnostics().c_str(),L"Just Type (اكتب بلا هم) - Diagnostics",MB_OK|MB_ICONINFORMATION); }
     static bool hook_allowed_in_process() {
         wchar_t dataDir[32768]{};
         DWORD n = GetEnvironmentVariableW(L"AUTOKEYBOARD_DATA_DIR", dataDir, 32768);
@@ -93,7 +95,7 @@ class App {
     void edit_protected_words() {
         ensure_protected_words_file(protectedFile_);
         ShellExecuteW(window_, L"open", L"notepad.exe", (L"\"" + protectedFile_.wstring() + L"\"").c_str(), nullptr, SW_SHOWNORMAL);
-        notice_ = L"Editing protected-words.txt. Save the file in Notepad and AutoKeyboard will reload it automatically.";
+        notice_ = L"Editing protected-words.txt. Save the file in Notepad and Just Type will reload it automatically.";
         SetWindowTextW(noticeLabel_, notice_.c_str());
     }
     size_t minimum(int id) {
@@ -152,17 +154,29 @@ class App {
     void preview() {
         if (!control(PreviewKeys) || !previewLabel_) return;
         try {
-            auto selected = selected_settings(); apply(engine_, selected);
+            auto selected = selected_settings();
+            std::string savedCurrent = engine_.current;
+            apply(engine_, selected);
             auto index = SendMessageW(control(PreviewLanguage), CB_GETCURSEL, 0, 0);
             if (index >= 0 && static_cast<size_t>(index) < engine_.packs.size()) engine_.current = engine_.packs[index].id;
             auto strokes = preview_strokes();
-            if (strokes.empty()) { SetWindowTextW(previewLabel_, L"Enter one word using its US physical keys, for example hgsghl or hello."); return; }
+            if (strokes.empty()) {
+                SetWindowTextW(previewLabel_, L"Enter one word using its US physical keys, for example hgsghl or hello.");
+                apply(engine_, settings_);
+                engine_.current = savedCurrent;
+                return;
+            }
             auto choice = engine_.decide(strokes);
             std::wstring text;
             for (const auto& pack : engine_.packs) text += pack.name + L": " + pack.render(strokes) + L"     ";
             text += L"\r\nResult: " + choice.text + L"   (" + wide(choice.reason) + L")";
             SetWindowTextW(previewLabel_, text.c_str());
-        } catch (...) { SetWindowTextW(previewLabel_, L"Set minimum lengths between 1 and 32."); }
+            apply(engine_, settings_);
+            engine_.current = savedCurrent;
+        } catch (...) {
+            apply(engine_, settings_);
+            SetWindowTextW(previewLabel_, L"Set minimum lengths between 1 and 32.");
+        }
     }
     void refresh_history() {
         history_ = store_->imports();
@@ -374,8 +388,34 @@ class App {
                 if (id == TrayLock) settings_.locked = !settings_.locked;
                 else settings_.mode = id == TrayAutomatic ? Mode::Automatic : Mode::Cautious;
                 store_->save_settings(settings_); apply(engine_, settings_); settings_to_controls(); update_tray(); preview();
-            } else if (notification == EN_CHANGE || notification == CBN_SELCHANGE || id == Lock || id == GlobalHookToggle || id == AltShiftToggle) preview();
+            } else if (id == Lock || id == GlobalHookToggle || id == AltShiftToggle) {
+                if (id == Lock) settings_.locked = SendMessageW(control(Lock), BM_GETCHECK, 0, 0) == BST_CHECKED;
+                if (id == GlobalHookToggle) {
+                    settings_.global_hook = SendMessageW(control(GlobalHookToggle), BM_GETCHECK, 0, 0) == BST_CHECKED;
+                    sync_hook();
+                }
+                if (id == AltShiftToggle) settings_.alt_shift_shortcut = SendMessageW(control(AltShiftToggle), BM_GETCHECK, 0, 0) == BST_CHECKED;
+                store_->save_settings(settings_); apply(engine_, settings_); update_tray(); preview();
+            } else if (id == ModeSelect && notification == CBN_SELCHANGE) {
+                settings_.mode = SendMessageW(control(ModeSelect), CB_GETCURSEL, 0, 0) == 1 ? Mode::Automatic : Mode::Cautious;
+                store_->save_settings(settings_); apply(engine_, settings_); update_tray(); preview();
+            } else if (notification == EN_CHANGE || notification == CBN_SELCHANGE) preview();
             return 0;
+        }
+        case WM_ERASEBKGND: {
+            HDC hdc = reinterpret_cast<HDC>(w);
+            RECT rc{}; GetClientRect(window_, &rc);
+            FillRect(hdc, &rc, bgBrush_ ? bgBrush_ : reinterpret_cast<HBRUSH>(COLOR_WINDOW+1));
+            return 1;
+        }
+        case WM_CTLCOLORSTATIC: {
+            HDC hdc = reinterpret_cast<HDC>(w);
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, RGB(31, 41, 55));
+            return reinterpret_cast<LRESULT>(cardBrush_ ? cardBrush_ : bgBrush_);
+        }
+        case WM_CTLCOLORDLG: {
+            return reinterpret_cast<LRESULT>(bgBrush_);
         }
         case WM_CLOSE: ShowWindow(window_,SW_HIDE); return 0;
         case WM_DESTROY:
@@ -399,14 +439,26 @@ class App {
         return DefWindowProcW(window,message,w,l);
     }
 public:
-    ~App() { if (hook_) hook_->stop(); if (worker_.joinable()) { cancelled_ = true; worker_.join(); } if (font_) DeleteObject(font_); if (titleFont_) DeleteObject(titleFont_); }
+    ~App() {
+        if (hook_) hook_->stop();
+        if (worker_.joinable()) { cancelled_ = true; worker_.join(); }
+        if (font_) DeleteObject(font_);
+        if (titleFont_) DeleteObject(titleFont_);
+        if (bgBrush_) DeleteObject(bgBrush_);
+        if (cardBrush_) DeleteObject(cardBrush_);
+        if (borderPen_) DeleteObject(borderPen_);
+    }
     int run(bool quiet) {
         dpi_=GetDpiForSystem();
         auto folder = data_folder(); std::filesystem::create_directories(folder); bank_ = folder / L"words.db";
         protectedFile_ = protected_words_path();
         store_ = std::make_unique<Store>(bank_); settings_ = store_->settings();
         engine_.load(packs_folder()); reload_protected_words(true); apply(engine_,settings_);
+        bgBrush_ = CreateSolidBrush(RGB(243, 244, 246));
+        cardBrush_ = CreateSolidBrush(RGB(255, 255, 255));
+        borderPen_ = CreatePen(PS_SOLID, 1, RGB(229, 231, 235));
         HookCallbacks callbacks{};
+        callbacks.sync_os_modifiers = true;
         callbacks.lock_changed = [this](bool locked) {
             if (window_) PostMessageW(window_, TrayLockMessage, locked ? 1 : 0, 0);
         };
@@ -437,7 +489,7 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR command,int) {
     HRESULT com = CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     int result = 1;
     try { App app; result = app.run(command && wcsstr(command,L"--tray")); }
-    catch (const std::exception& e) { MessageBoxW(nullptr,ak::wide(e.what()).c_str(),L"AutoKeyboard",MB_OK | MB_ICONERROR); }
+    catch (const std::exception& e) { MessageBoxW(nullptr,ak::wide(e.what()).c_str(),L"Just Type (اكتب بلا هم)",MB_OK | MB_ICONERROR); }
     if (SUCCEEDED(com)) CoUninitialize();
     return result;
 }

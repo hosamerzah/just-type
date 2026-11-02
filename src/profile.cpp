@@ -85,7 +85,7 @@ HRESULT activate_keyboard(bool session) {
 }
 std::wstring keyboard_diagnostics() {
     std::wostringstream report;
-    report<<L"AutoKeyboard Windows activation diagnostics\r\n";
+    report<<L"Just Type (اكتب بلا هم) Windows activation diagnostics\r\n";
     report<<desktop_preflight().report;
     ComPtr<ITfInputProcessorProfileMgr> profiles;
     HRESULT hr=CoCreateInstance(CLSID_TF_InputProcessorProfiles,nullptr,CLSCTX_INPROC_SERVER,IID_ITfInputProcessorProfileMgr,reinterpret_cast<void**>(profiles.put()));
@@ -96,7 +96,7 @@ std::wstring keyboard_diagnostics() {
         report<<L"Registered profile: "<<hresult_text(hr)<<L"; flags="<<std::hex<<profile.dwFlags<<L"\r\n";
         TF_INPUTPROCESSORPROFILE active{};
         hr=profiles->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD,&active);
-        report<<L"Current process uses AutoKeyboard: "<<(SUCCEEDED(hr)&&IsEqualCLSID(active.clsid,ServiceId)?L"yes":L"no")<<L"\r\n";
+        report<<L"Current process uses Just Type: "<<(SUCCEEDED(hr)&&IsEqualCLSID(active.clsid,ServiceId)?L"yes":L"no")<<L"\r\n";
     }
     ComPtr<ITfTextInputProcessorEx> service;
     hr=CoCreateInstance(ServiceId,nullptr,CLSCTX_INPROC_SERVER,IID_ITfTextInputProcessorEx,reinterpret_cast<void**>(service.put()));

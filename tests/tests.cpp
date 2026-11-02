@@ -280,7 +280,37 @@ int main() {
         // 5. Ctrl+Alt+L toggles lock
         key_down(VK_LCONTROL); key_down(VK_LMENU);
         check(key_down('L') && settings.locked && lockNotified, "Ctrl+Alt+L did not lock");
+        key_up('L');
+        check(key_down('L') && !settings.locked && !engine.locked, "Ctrl+Alt+L did not unlock");
         key_up('L'); key_up(VK_LMENU); key_up(VK_LCONTROL);
+
+        // 6. Backspace on empty buffer does NOT poison subsequent words
+        activeLang = "en"; lastBackspaces = 0; lastReplaced.clear();
+        tap(VK_BACK); tap(VK_BACK);
+        for (char c : std::string("HGSGHL")) tap(static_cast<DWORD>(c));
+        check(tap(VK_SPACE) && lastReplaced == L"السلام " && activeLang == "ar", "backspace on empty buffer poisoned next word");
+
+        // 7. Arrow keys and Delete do NOT poison subsequent words
+        activeLang = "en"; lastBackspaces = 0; lastReplaced.clear();
+        tap(VK_LEFT); tap(VK_RIGHT); tap(VK_DOWN); tap(VK_DELETE);
+        for (char c : std::string("HGSGHL")) tap(static_cast<DWORD>(c));
+        check(tap(VK_SPACE) && lastReplaced == L"السلام " && activeLang == "ar", "arrow keys poisoned next word");
+
+        // 8. 5-second typing pause does NOT poison subsequent words
+        activeLang = "en"; lastBackspaces = 0; lastReplaced.clear();
+        tap('H');
+        tick += 6000; // simulate >5s pause
+        for (char c : std::string("HGSGHL")) tap(static_cast<DWORD>(c));
+        check(tap(VK_SPACE) && lastReplaced == L"السلام " && activeLang == "ar", "idle timeout poisoned next word");
+
+        // 9. Multi-character trailing punctuation (e.g. "!!") converts core word and preserves punctuation
+        activeLang = "en"; lastBackspaces = 0; lastReplaced.clear();
+        for (char c : std::string("HGSGHL")) tap(static_cast<DWORD>(c));
+        key_down(VK_LSHIFT);
+        key_down(0x31); key_up(0x31); // '!'
+        key_down(0x31); key_up(0x31); // '!'
+        key_up(VK_LSHIFT);
+        check(tap(VK_SPACE) && lastReplaced.find(L"السلام") != std::wstring::npos && activeLang == "ar", "multi-exclamation trailing punctuation failed to convert");
     });
     std::cout << passed << " passed, " << failed << " failed\n";
     // Only files created by this test process are removed.
