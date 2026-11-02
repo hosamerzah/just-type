@@ -1,140 +1,99 @@
-# AutoKeyboard 🌐⌨️
+# Just Type (اكتب بلا هم) 🌐⌨️
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%20Windows%2011-0078D6.svg)](https://microsoft.com)
 [![Language](https://img.shields.io/badge/Language-C%2B%2B20-green.svg)](https://en.wikipedia.org/wiki/C%2B%2B20)
 
-**AutoKeyboard** is an intelligent, native Windows keyboard layout switcher and typing assistant for **Arabic** and **English**. It eliminates the constant friction of manually pressing `Alt + Shift` or `Win + Space` by automatically detecting the intended language and switching the Windows keyboard layout seamlessly as you type.
+**Just Type (اكتب بلا هم)** is a lightweight native Windows utility for seamless automatic switching between Arabic and English keyboard layouts. It lets you type freely without manually toggling between layouts with `Alt + Shift` or `Win + Space`.
 
-100% offline, local, ultra-fast, and privacy-respecting: **no AI, no cloud, no OCR, no runtime downloads, and zero typing history or telemetry collection.**
+100% local, offline, ultra-fast, and private: no AI, no cloud dependencies, and no typing data collection.
 
 ---
 
 ## 👥 Authors & Credits
 
-### 💡 Original Concept & Idea
-- **Mohammed Alshamiri (محمد الشميري)**
-  - 📧 Email: [m.shameri214@gmail.com](mailto:m.shameri214@gmail.com)
-  - 📱 Phone: [+967771784214](tel:+967771784214)
-  - *Conceived the original idea, practical vision, and initial concept for an effortless, automatic bilingual typing experience.*
+* **Eng. Mohammed Alshamiri (المهندس محمد الشميري)**
+  * **Role**: Idea & Concept (صاحب الفكرة)
+  * **Email**: [m.shameri214@gmail.com](mailto:m.shameri214@gmail.com)
+  * **Phone**: [+967771784214](tel:+967771784214)
 
-### 🛠️ Lead Architect & Developer
-- **Ahmed Merzah Alzubair (أحمد ميرزاح الزبير)**
-  - 📧 Email: [eng.alzubairy27@gmail.com](mailto:eng.alzubairy27@gmail.com)
-  - 📱 Phone: [+967774361616](tel:+967774361616)
-  - 🐙 GitHub: [@hosamerzah](https://github.com/hosamerzah)
-  - *Engineered the full system architecture, low-level Windows hooks, Text Services Framework (TSF) integration, 50,000-word frequency dictionaries, UI, PDF vocabulary worker, and Windows 11 compatibility enhancements.*
+* **Eng. Ahmed Merzah Alzubair (المهندس أحمد ميرزاح الزبير)**
+  * **Role**: Development & Implementation (التطوير البرمجي)
+  * **Email**: [eng.alzubairy27@gmail.com](mailto:eng.alzubairy27@gmail.com)
+  * **Phone**: [+967774361616](tel:+967774361616)
+  * **GitHub**: [@hosamerzah](https://github.com/hosamerzah)
 
 ---
 
-## ✨ Key Features
+## ✨ Features
 
-- **Automatic Real-Time Language Switching**: Switches seamlessly between Arabic (101) and English (US) layouts at word boundaries based on frequency dictionaries and deterministic rules.
-- **Dual Architecture (Hook + TSF)**:
-  - Low-level Windows hooks (`WH_KEYBOARD_LL` & `WH_MOUSE_LL`) for sub-millisecond layout switching across all applications.
-  - Windows Text Services Framework (TSF) COM provider for deep integration with modern Windows 11 applications (Notepad, Word, Edge, Chrome).
-- **50,000+ Word Frequency Dictionaries**: Pre-bundled with high-accuracy Hunspell dictionaries and word frequency ranking for both Arabic and English to resolve ambiguous keystrokes intelligently.
-- **Smart Safety & Boundary Protection**:
-  - Automatically preserves passwords, URL bars, code/terminal sessions, and email fields without interference.
-  - Cursor tracking and mouse protection ensure existing text is never accidentally overwritten or corrupted.
-- **Custom Protected Words**: Built-in editor to define custom words, names, commands, or jargon that should always stay in a specific layout.
-- **PDF Word Bank Importer**: Import your own specialized vocabulary and documents directly from PDF files into a local SQLite database (`words.db`).
-- **System Tray Management**: Clean tray menu with live mode indicators, manual layout toggling, lock state, and settings access.
-- **Windows 11 Ghost Keyboard Cleaner**: Includes a dedicated script (`tools/clean_ghost_keyboards.bat`) to clean stubborn phantom layouts (e.g. UK English or Afrikaans) from the Windows 11 language flyout.
+- **Automatic Language Switching**: Detects word boundaries and switches between Arabic (101) and English (US) automatically.
+- **Hybrid Hook + TSF Architecture**: Combines low-level keyboard hooks (`WH_KEYBOARD_LL`) with Text Services Framework (TSF) integration for full compatibility across Win32 and modern Windows 11 applications (Notepad, Word, Edge, Chrome, WhatsApp).
+- **50,000-Word Frequency Dictionaries**: Pre-bundled with high-frequency wordlists and Hunspell dictionaries for accurate layout selection.
+- **Safety & Caret Protection**: Password fields, URLs, terminals, and arrow/mouse movements preserve your text safely.
+- **Custom Protected Words**: Simple editor to add technical terms, usernames, or commands that should never be converted.
+- **PDF Word Bank Importer**: Import custom words from your own PDF documents into a local SQLite database.
+- **System Tray Controls**: Quickly switch modes, lock language, or access settings from the Windows taskbar.
+- **Ghost Keyboard Cleaner**: Includes `tools/clean_ghost_keyboards.bat` to eliminate phantom keyboard layouts in Windows 11.
 
 ---
 
-## 🚀 Quick Start for Users
+## 🚀 Download & Installation
 
-### Installation
-1. Download the latest installer from the [Releases](https://github.com/hosamerzah/lang_switcher/releases) page:
-   - `AutoKeyboard-0.2.0-unsigned-preview-setup.exe`
-2. Run the installer. It registers the keyboard profile and adds a Start menu shortcut.
-3. Open **AutoKeyboard** from the Start menu.
-4. Click **Activate keyboard**, then select **Automatic Arabic / English** with `Win + Space` if prompted.
+1. Download the installer from the [Releases](https://github.com/hosamerzah/just-type/releases) page:
+   - `AutoKeyboard-0.2.0-unsigned-preview-setup.exe` (or `JustType-setup.exe`)
+2. Run the installer and launch the program from the Start menu.
+3. Click **Activate keyboard**, and select **Automatic Arabic / English** via `Win + Space` if needed.
 
-### Essential Shortcuts
+### Shortcuts
 | Shortcut | Action |
 | :--- | :--- |
-| <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Space</kbd> | Convert current or most recently typed word between Arabic & English |
-| <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Backspace</kbd> | Undo the most recent word conversion |
-| <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>L</kbd> | Lock / unlock the current typing language |
-
----
-
-## 🛠️ How It Works
-
-Words remain provisional while typing. Pressing <kbd>Space</kbd> or <kbd>Enter</kbd> finalizes the word and evaluates whether a layout switch is needed:
-- **Cautious Mode** (default): Switches layout only when the alternative language forms a valid dictionary word and the current interpretation does not.
-- **Automatic Mode**: Ranks candidates based on frequency rankings, imported document counts, and language preference.
-- Punctuation keys finalize words safely without interfering with shared keys (e.g., the US period key `.` which corresponds to Arabic `ز`).
-- Arrow keys, Tab, Escape, and mouse clicks commit provisional text without switching.
+| <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Space</kbd> | Convert current word between Arabic and English |
+| <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Backspace</kbd> | Undo last conversion |
+| <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>L</kbd> | Lock / unlock current language |
 
 ---
 
 ## 📁 Repository Structure
 
 ```text
-lang_switcher/
-├── assets/                  # Icons, application manifests, and resources
-├── docs/                    # Architecture, testing, and compatibility specs
-├── packs/                   # Arabic & English Hunspell dictionaries & keymaps
-│   ├── ar/                  # Arabic 101 layout, dictionary, frequency list
-│   └── en/                  # US English layout, dictionary, frequency list
-├── scripts/                 # Automated build, bootstrap, and packaging scripts
-├── src/                     # Core C++20 engine, TSF provider, hooks, settings UI
+just-type/
+├── assets/                  # Icons and application manifest
+├── docs/                    # Architecture and validation documentation
+├── packs/                   # Arabic & English dictionaries and keymaps
+├── scripts/                 # Build and packaging automation
+├── src/                     # Core C++20 engine, hooks, TSF provider, UI
 ├── tests/                   # Automated unit & integration test suites
 ├── tools/                   # Helper utilities (ghost keyboard cleaner)
-├── AUTHORS.md               # Full credits and contact information
-├── CMakeLists.txt           # CMake build definition
-├── LICENSE                  # MIT Open Source License
-└── README.md                # Project documentation
+├── AUTHORS.md               # Authors & credits
+├── CMakeLists.txt           # Build definition
+├── LICENSE                  # MIT License
+└── README.md                # Documentation
 ```
 
 ---
 
 ## 🔧 Building from Source
 
-### Prerequisites
-- Windows 10 or 11 (64-bit)
-- Python 3.11+
-- CMake 3.24+
-- Either Visual Studio with Desktop C++ / Windows SDK, or the portable LLVM-MinGW toolchain.
-
-### Build Steps
 ```powershell
-# 1. Download & prepare dependencies (offline-capable after bootstrap)
+# Bootstrap dependencies
 python scripts/bootstrap.py --arch x64 --toolchain
 python scripts/bootstrap.py --arch x86
 
-# 2. Build both x64 and x86 architectures
+# Build x64 and x86
 powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -Architecture x64 -UseLocalClang
 powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -Architecture x86 -UseLocalClang
 
-# 3. Create the standalone installer
+# Package installer
 powershell -ExecutionPolicy Bypass -File scripts/package.ps1 -UnsignedPreview
 
-# 4. Run automated verification suite
+# Verify installer package
 python scripts/verify_package.py
 ```
 
-The compiled installer will be output to:
-`dist/AutoKeyboard-0.2.0-unsigned-preview-setup.exe`
-
 ---
 
-## 📜 Dependencies & Licenses
+## 📜 License
 
-- **AutoKeyboard**: Released under the [MIT License](LICENSE).
-- **Hunspell 1.7.2**: LGPL / GPL / MPL options in `licenses/`.
-- **SQLite 3.50.4**: Public domain.
-- **PDFium (Chromium build 8125)**: BSD and third-party notices in `licenses/`.
-- **Dictionaries**: LibreOffice dictionaries commit `4f1df64b2e8e14751aa7c2205d170ca016071315` (GPL / LGPL / MPL).
-
----
-
-## 💬 Contact & Support
-
-For questions, suggestions, or contributions:
-- **Ahmed Merzah Alzubair**: [eng.alzubairy27@gmail.com](mailto:eng.alzubairy27@gmail.com) | [+967774361616](tel:+967774361616)
-- **Mohammed Alshamiri**: [m.shameri214@gmail.com](mailto:m.shameri214@gmail.com) | [+967771784214](tel:+967771784214)
+Released under the [MIT License](LICENSE).  
+Copyright (c) 2026 Eng. Mohammed Alshamiri & Eng. Ahmed Merzah Alzubair.

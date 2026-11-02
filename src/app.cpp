@@ -241,7 +241,7 @@ class App {
             language = wide(engine_.packs[state.language].id);
         }
         std::wstring mode = (!hookActive && state.pid ? state.mode != 0 : settings_.mode == Mode::Automatic) ? L"Automatic" : L"Cautious";
-        std::wstring text = L"AutoKeyboard | " + language + L" | " + mode;
+        std::wstring text = L"Just Type (اكتب بلا هم) | " + language + L" | " + mode;
         if (hookActive) text += L" | Hook";
         if (!hookActive && state.pid ? state.locked != 0 : settings_.locked) text += L" | Locked";
         wcsncpy_s(tray_.szTip, text.c_str(), _TRUNCATE);
@@ -271,7 +271,7 @@ class App {
         heading_ = add(L"STATIC", L"Arabic and English. Keep typing.",0,0,28,20,740,40);
         SendMessageW(heading_, WM_SETFONT, reinterpret_cast<WPARAM>(titleFont_), TRUE);
         caption_ = add(L"STATIC", L"Local dictionaries and fixed rules. No AI. No typing history.",0,0,30,65,740,25);
-        status_ = add(L"STATIC", L"AutoKeyboard | not active",0,0,30,98,395,26);
+        status_ = add(L"STATIC", L"Just Type (اكتب بلا هم) | not active",0,0,30,98,395,26);
         add(L"BUTTON",L"Activate keyboard",BS_PUSHBUTTON|WS_TABSTOP,ActivateKeyboard,435,94,180,31);
         add(L"BUTTON",L"Diagnostics",BS_PUSHBUTTON|WS_TABSTOP,Diagnostics,630,94,140,31);
         label(L"Switching mode",30,140,160);
@@ -418,11 +418,11 @@ public:
         cls.hIcon = icon_; cls.hCursor = LoadCursorW(nullptr,IDC_ARROW); cls.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);
         RegisterClassW(&cls);
         RECT work{};SystemParametersInfoW(SPI_GETWORKAREA,0,&work,0);
-        if (!CreateWindowW(tray_class().c_str(),L"AutoKeyboard 0.2.0 - Settings and word bank",WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
+        if (!CreateWindowW(tray_class().c_str(),L"Just Type (اكتب بلا هم) 0.2.0 - Settings and word bank",WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
             CW_USEDEFAULT,CW_USEDEFAULT,scaled(840),std::min(scaled(810),static_cast<int>(work.bottom-work.top)),nullptr,nullptr,cls.hInstance,this)) throw std::runtime_error("Cannot create settings window");
         tray_.cbSize = sizeof(tray_); tray_.hWnd = window_; tray_.uID = 1;
         tray_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP; tray_.uCallbackMessage = TrayCallback; tray_.hIcon = icon_;
-        wcscpy_s(tray_.szTip,L"AutoKeyboard"); Shell_NotifyIconW(NIM_ADD,&tray_); SetTimer(window_,1,750,nullptr);
+        wcscpy_s(tray_.szTip,L"Just Type (اكتب بلا هم)"); Shell_NotifyIconW(NIM_ADD,&tray_); SetTimer(window_,1,750,nullptr);
         update_tray();
         if (!quiet) ShowWindow(window_,SW_SHOW);
         MSG message{};
